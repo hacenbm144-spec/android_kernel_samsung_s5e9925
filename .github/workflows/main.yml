@@ -20,87 +20,81 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y \
             bc bison build-essential ccache curl flex \
-            g++-multilib gcc-multilib git gnupg gperf imagemagick \
-            lib32readline-dev lib32z1-dev libelf-dev libgl1-mesa-dev \
-            liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev \
-            libxml2 libxml2-utils lzop pngcrush rsync schedtool \
-            squashfs-tools xsltproc zip zlib1g-dev python3 python3-pip \
-            libdw-dev libdwarf-dev
+            git libelf-dev libncurses5-dev libssl-dev \
+            lzop python3 zip zlib1g-dev
 
-      - name: Setup Clang toolchain
+      - name: Setup Clang toolchain (ZyC Clang 17)
         run: |
-          mkdir -p $HOME/toolchain
-          cd $HOME/toolchain
-          # Use AOSP Clang 17 (known to work with s5e9925)
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz -O clang.tar.gz || \
-          curl -L "https://github.com/ZyCromerZ/Clang/releases/download/17.0.0-20230322-release/Clang-17.0.0-20230322.tar.gz" -o clang.tar.gz
-          mkdir clang && tar -xf clang.tar.gz -C clang
-          echo "CLANG_PATH=$HOME/toolchain/clang/bin" >> $GITHUB_ENV
+          mkdir -p $HOME/toolchain/clang
+          curl -L "https://github.com/ZyCromerZ/Clang/releases/download/17.0.0-20230322-release/Clang-17.0.0-20230322.tar.gz" \
+            -o clang.tar.gz
+          tar -xf clang.tar.gz -C $HOME/toolchain/clang
+          echo "$HOME/toolchain/clang/bin" >> $GITHUB_PATH
 
-      - name: Setup GCC cross compiler
+      - name: Build kernel
         run: |
-          mkdir -p $HOME/toolchain/gcc64
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
-            $HOME/toolchain/gcc64
-          echo "GCC64_PATH=$HOME/toolchain/gcc64/bin" >> $GITHUB_ENV
+          export PATH="$HOME/toolchain/clang/bin:$PATH"
 
-      - name: Set build environment
-        run: |
-          echo "ARCH=arm64" >> $GITHUB_ENV
-          echo "SUBARCH=arm64" >> $GITHUB_ENV
-          echo "CROSS_COMPILE=aarch64-linux-android-" >> $GITHUB_ENV
-          echo "CROSS_COMPILE_ARM32=arm-linux-androideabi-" >> $GITHUB_ENV
-          echo "KBUILD_BUILD_USER=hacenbm144" >> $GITHUB_ENV
-          echo "KBUILD_BUILD_HOST=ExtremeKRNL-b0s" >> $GITHUB_ENV
-          echo "PATH=$HOME/toolchain/clang/bin:$HOME/toolchain/gcc64/bin:$PATH" >> $GITHUB_ENV
-
-      - name: Generate .config (defconfig + b0s fragment)
-        run: |
-          export PATH=$HOME/toolchain/clang/bin:$HOME/toolchain/gcc64/bin:$PATH
+          # Generate config: base defconfig + b0s device fragment
           make O=out \
             ARCH=arm64 \
             CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
             s5e9925_defconfig
 
-          # Merge b0s device config fragment
+          # Merge b0s device fragment
           ./scripts/kconfig/merge_config.sh -m -O out \
             out/.config \
             arch/arm64/configs/b0s.config
 
           # Enable BBR TCP congestion control
-          echo "CONFIG_TCP_CONG_BBR=y" >> out/.config
-          echo "CONFIG_DEFAULT_TCP_CONG=\"bbr\"" >> out/.config
-          echo "CONFIG_NET_SCH_FQ=y" >> out/.config
-
+          echo "CONFIG_TCP_CONG_BBR=y"            >> out/.config
+          echo 'CONFIG_DEFAULT_TCP_CONG="bbr"'    >> out/.config
+          echo "CONFIG_NET_SCH_FQ=y"              >> out/.config
           # Enable TCP Fast Open
-          echo "CONFIG_TCP_FASTOPEN=y" >> out/.config
-
+          echo "CONFIG_TCP_FASTOPEN=y"            >> out/.config
           # Enable WireGuard
-          echo "CONFIG_WIREGUARD=y" >> out/.config
-
+          echo "CONFIG_WIREGUARD=y"               >> out/.config
           # Enable ZRAM with zstd
-          echo "CONFIG_ZRAM=y" >> out/.config
-          echo "CONFIG_ZRAM_DEF_COMP_ZSTD=y" >> out/.config
-          echo "CONFIG_CRYPTO_ZSTD=y" >> out/.config
+          echo "CONFIG_ZRAM=y"                    >> out/.config
+          echo "CONFIG_ZRAM_DEF_COMP_ZSTD=y"     >> out/.config
+          echo "CONFIG_CRYPTO_ZSTD=y"             >> out/.config
 
-          # Finalize config
+          # Finalise config
           make O=out \
             ARCH=arm64 \
             CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            KBUILD_BUILD_USER=hacenbm144 \
+            KBUILD_BUILD_HOST=ExtremeKRNL-b0s \
             olddefconfig
 
-      - name: Build kernel
-        run: |
-          export PATH=$HOME/toolchain/clang/bin:$HOME/toolchain/gcc64/bin:$PATH
+          # Build
           make O=out \
             ARCH=arm64 \
             CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
             KBUILD_BUILD_USER=hacenbm144 \
             KBUILD_BUILD_HOST=ExtremeKRNL-b0s \
             -j$(nproc --all) 2>&1 | tee build.log
@@ -109,9 +103,12 @@ jobs:
         run: |
           if [ -f out/arch/arm64/boot/Image ]; then
             echo "✅ Kernel Image built successfully"
+            ls -lh out/arch/arm64/boot/Image
           else
             echo "❌ Build failed - Image not found"
-            tail -50 build.log
+            echo "--- Contents of out/arch/arm64/boot/ ---"
+            ls out/arch/arm64/boot/ 2>/dev/null || echo "(empty)"
+            tail -80 build.log
             exit 1
           fi
 
@@ -120,12 +117,10 @@ jobs:
           git clone --depth=1 https://github.com/hacenbm144-spec/AnyKernel3 AnyKernel3
           cp out/arch/arm64/boot/Image AnyKernel3/
           # Copy DTBs if present
-          if [ -f out/arch/arm64/boot/dtb.img ]; then
-            cp out/arch/arm64/boot/dtb.img AnyKernel3/
-          fi
-          if [ -d out/arch/arm64/boot/dts ]; then
-            find out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} AnyKernel3/dtbs/ \; 2>/dev/null || true
-          fi
+          find out/arch/arm64/boot/dts -name "*.dtb" \
+            -exec cp {} AnyKernel3/dtbs/ \; 2>/dev/null || true
+          [ -f out/arch/arm64/boot/dtb.img ] && \
+            cp out/arch/arm64/boot/dtb.img AnyKernel3/ || true
           cd AnyKernel3
           zip -r9 ../ExtremeKRNL-b0s-BBR-$(date +%Y%m%d-%H%M).zip . -x '*.git*'
 
