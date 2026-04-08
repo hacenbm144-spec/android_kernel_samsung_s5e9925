@@ -1,0 +1,207 @@
+name: Build tcp_bbr.ko
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          ref: lineage-23.2
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            bc bison build-essential curl flex \
+            git libelf-dev libncurses5-dev libssl-dev \
+            python3 zip zlib1g-dev
+
+      - name: Setup Clang toolchain (ZyC Clang 18)
+        run: |
+          mkdir -p $HOME/toolchain/clang
+          curl -L \
+            "https://github.com/ZyCromerZ/Clang/releases/download/18.0.0-20240322-release/Clang-18.0.0-20240322.tar.gz" \
+            -o clang.tar.gz
+          tar -xf clang.tar.gz -C $HOME/toolchain/clang
+          echo "$HOME/toolchain/clang/bin" >> $GITHUB_PATH
+          $HOME/toolchain/clang/bin/clang --version
+
+      - name: Generate kernel config
+        run: |
+          export PATH="$HOME/toolchain/clang/bin:$PATH"
+          make O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            s5e9925_defconfig
+
+          # Merge b0s fragment
+          ./scripts/kconfig/merge_config.sh -m -O out \
+            out/.config \
+            arch/arm64/configs/b0s.config
+
+          # Enable BBR as MODULE (=m not =y)
+          echo "CONFIG_TCP_CONG_BBR=m" >> out/.config
+          echo "CONFIG_MODULES=y" >> out/.config
+          echo "CONFIG_MODULE_UNLOAD=y" >> out/.config
+
+          make O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            KBUILD_BUILD_USER=hacenbm144 \
+            KBUILD_BUILD_HOST=ExtremeKRNL-b0s \
+            olddefconfig
+
+          echo "=== BBR config check ==="
+          grep "TCP_CONG_BBR\|CONFIG_MODULES\|MODULE_UNLOAD" out/.config
+
+      - name: Build tcp_bbr.ko only
+        run: |
+          export PATH="$HOME/toolchain/clang/bin:$PATH"
+
+          # Build only the BBR module - much faster than full kernel
+          make O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            KBUILD_BUILD_USER=hacenbm144 \
+            KBUILD_BUILD_HOST=ExtremeKRNL-b0s \
+            -j$(nproc --all) \
+            net/ipv4/tcp_bbr.ko 2>&1 | tee build.log
+
+      - name: Check output
+        run: |
+          if [ -f out/net/ipv4/tcp_bbr.ko ]; then
+            echo "✅ tcp_bbr.ko built successfully!"
+            ls -lh out/net/ipv4/tcp_bbr.ko
+            # Show vermagic
+            strings out/net/ipv4/tcp_bbr.ko | grep vermagic
+          else
+            echo "❌ Build failed"
+            tail -50 build.log
+            exit 1
+          fi
+
+      - name: Package as Magisk module
+        run: |
+          mkdir -p magisk_module/META-INF/com/google/android
+          mkdir -p magisk_module/module
+
+          # Copy the .ko
+          cp out/net/ipv4/tcp_bbr.ko magisk_module/module/
+
+          # module.prop
+          cat > magisk_module/module.prop << 'EOF'
+          id=tcp_bbr_extremekrnl
+          name=TCP BBR for ExtremeKRNL-Quant-v2
+          version=v1.0
+          versionCode=1
+          author=hacenbm144
+          description=Adds BBR TCP congestion control to ExtremeKRNL-Quant-v2 (5.10.246)
+          EOF
+
+          # post-fs-data.sh - loads the module at boot
+          cat > magisk_module/post-fs-data.sh << 'EOF'
+          MODDIR=${0%/*}
+
+          ORIG_DESC=$(grep -m1 -E '^description=' ${MODDIR}/module.prop | cut -d'=' -f2)
+          grep -vE '^description=' ${MODDIR}/module.prop > ${MODDIR}/module.prop.tmp
+          mv ${MODDIR}/module.prop.tmp ${MODDIR}/module.prop
+
+          if cat /proc/sys/net/ipv4/tcp_available_congestion_control | grep -q 'bbr'; then
+            desc="[✅ BBR already available] $ORIG_DESC"
+          elif insmod ${MODDIR}/module/tcp_bbr.ko; then
+            desc="[✅ tcp_bbr.ko loaded successfully] $ORIG_DESC"
+            # Set BBR as default
+            echo 'bbr' > /proc/sys/net/ipv4/tcp_congestion_control
+            echo 'fq' > /proc/sys/net/core/default_qdisc
+          else
+            desc="[❌ tcp_bbr.ko failed to load - vermagic mismatch?] $ORIG_DESC"
+          fi
+
+          echo "description=${desc}" >> ${MODDIR}/module.prop
+          sync
+          EOF
+
+          # service.sh - verify BBR is active after boot
+          cat > magisk_module/service.sh << 'EOF'
+          # Wait for system to be ready
+          sleep 10
+          # Set BBR and FQ if BBR loaded
+          if cat /proc/sys/net/ipv4/tcp_available_congestion_control | grep -q 'bbr'; then
+            echo 'bbr' > /proc/sys/net/ipv4/tcp_congestion_control
+            echo 'fq' > /proc/sys/net/core/default_qdisc
+          fi
+          EOF
+
+          # update-binary
+          cat > magisk_module/META-INF/com/google/android/update-binary << 'EOF'
+          #!/sbin/sh
+          SKIPUNZIP=1
+          unzip -o "$ZIPFILE" 'module/*' -d "$MODPATH"
+          unzip -o "$ZIPFILE" 'module.prop' -d "$MODPATH"
+          unzip -o "$ZIPFILE" 'post-fs-data.sh' -d "$MODPATH"
+          unzip -o "$ZIPFILE" 'service.sh' -d "$MODPATH"
+          set_perm_recursive "$MODPATH" root root 0755 0644
+          EOF
+
+          echo "#MAGISK" > magisk_module/META-INF/com/google/android/updater-script
+
+          # Zip it
+          cd magisk_module
+          zip -r9 ../tcp_bbr_ExtremeKRNL.zip . -x '*.git*'
+          cd ..
+
+          echo "✅ Magisk module packaged"
+          ls -lh tcp_bbr_ExtremeKRNL.zip
+
+      - name: Upload tcp_bbr.ko
+        uses: actions/upload-artifact@v4
+        with:
+          name: tcp_bbr_ko
+          path: out/net/ipv4/tcp_bbr.ko
+          retention-days: 7
+
+      - name: Upload Magisk module
+        uses: actions/upload-artifact@v4
+        with:
+          name: tcp_bbr_magisk_module
+          path: tcp_bbr_ExtremeKRNL.zip
+          retention-days: 7
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
