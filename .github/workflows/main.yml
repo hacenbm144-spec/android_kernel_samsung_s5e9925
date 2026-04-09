@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 30
 
     steps:
       - name: Checkout kernel source
@@ -37,88 +37,53 @@ jobs:
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
           make O=out \
-            ARCH=arm64 \
-            CC=clang \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
+            ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
             s5e9925_defconfig
           ./scripts/kconfig/merge_config.sh -m -O out \
-            out/.config \
-            arch/arm64/configs/b0s.config
+            out/.config arch/arm64/configs/b0s.config
           echo "CONFIG_TCP_CONG_BBR=m" >> out/.config
           echo "CONFIG_MODULES=y" >> out/.config
           echo "CONFIG_MODULE_UNLOAD=y" >> out/.config
           make O=out \
-            ARCH=arm64 \
-            CC=clang \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            KBUILD_BUILD_USER=hacenbm144 \
-            KBUILD_BUILD_HOST=ExtremeKRNL-b0s \
+            ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
+            KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s \
             olddefconfig
-          grep "TCP_CONG_BBR\|CONFIG_MODULES\|MODULE_UNLOAD" out/.config
+          grep "TCP_CONG_BBR\|CONFIG_MODULES" out/.config
 
-      - name: Prepare module build environment
+      - name: Build scripts only
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
           make O=out \
-            ARCH=arm64 \
-            CC=clang \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            KBUILD_BUILD_USER=hacenbm144 \
-            KBUILD_BUILD_HOST=ExtremeKRNL-b0s \
-            -j$(nproc --all) \
-            modules_prepare
+            ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
+            KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s \
+            -j$(nproc --all) scripts
 
       - name: Build tcp_bbr.ko
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
           make O=out \
-            ARCH=arm64 \
-            CC=clang \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            KBUILD_BUILD_USER=hacenbm144 \
-            KBUILD_BUILD_HOST=ExtremeKRNL-b0s \
+            ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
+            KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s \
             -j$(nproc --all) \
-            M=net/ipv4 \
             net/ipv4/tcp_bbr.ko 2>&1 | tee build.log
 
       - name: Check output
         run: |
           if [ -f out/net/ipv4/tcp_bbr.ko ]; then
-            echo "✅ tcp_bbr.ko built successfully!"
+            echo "SUCCESS tcp_bbr.ko built!"
             ls -lh out/net/ipv4/tcp_bbr.ko
             strings out/net/ipv4/tcp_bbr.ko | grep vermagic
           else
-            echo "❌ Build failed"
-            ls out/net/ipv4/*.ko 2>/dev/null || echo "No .ko files"
-            tail -30 build.log
+            echo "FAILED"
+            tail -50 build.log
             exit 1
           fi
 
@@ -173,13 +138,6 @@ EOF
           zip -r9 ../tcp_bbr_ExtremeKRNL.zip . -x '*.git*'
           cd ..
           ls -lh tcp_bbr_ExtremeKRNL.zip
-
-      - name: Upload tcp_bbr.ko
-        uses: actions/upload-artifact@v4
-        with:
-          name: tcp_bbr_ko
-          path: out/net/ipv4/tcp_bbr.ko
-          retention-days: 7
 
       - name: Upload Magisk module
         uses: actions/upload-artifact@v4
