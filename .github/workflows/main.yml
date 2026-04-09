@@ -4,7 +4,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - name: Checkout kernel source
         uses: actions/checkout@v4
@@ -24,17 +24,15 @@ jobs:
           echo "CONFIG_MODULES=y" >> out/.config
           echo "CONFIG_MODULE_UNLOAD=y" >> out/.config
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s olddefconfig
-      - name: Build scripts
+      - name: Build vmlinux and modules
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
-          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s -j$(nproc --all) scripts
-      - name: Build tcp_bbr.ko
-        run: |
-          export PATH="$HOME/toolchain/clang/bin:$PATH"
-          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s -j$(nproc --all) net/ipv4/tcp_bbr.ko 2>&1 | tee build.log
+          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s -j$(nproc --all) modules 2>&1 | tee build.log
       - name: Check and package
         run: |
-          if [ ! -f out/net/ipv4/tcp_bbr.ko ]; then tail -50 build.log; exit 1; fi
+          if [ ! -f out/net/ipv4/tcp_bbr.ko ]; then echo "FAILED - tcp_bbr.ko not found"; tail -50 build.log; exit 1; fi
+          echo "SUCCESS"
+          ls -lh out/net/ipv4/tcp_bbr.ko
           strings out/net/ipv4/tcp_bbr.ko | grep vermagic
           mkdir -p magisk/META-INF/com/google/android magisk/module
           cp out/net/ipv4/tcp_bbr.ko magisk/module/
@@ -43,7 +41,7 @@ jobs:
           printf '#!/sbin/sh\nSKIPUNZIP=1\nunzip -o "$ZIPFILE" -d "$MODPATH"\n' > magisk/META-INF/com/google/android/update-binary
           printf '#MAGISK\n' > magisk/META-INF/com/google/android/updater-script
           cd magisk && zip -r9 ../tcp_bbr.zip . && cd ..
-      - name: Upload
+      - name: Upload module
         uses: actions/upload-artifact@v4
         with:
           name: tcp_bbr_module
