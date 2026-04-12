@@ -24,12 +24,17 @@ jobs:
           echo "CONFIG_MODULES=y" >> out/.config
           echo "CONFIG_MODULE_UNLOAD=y" >> out/.config
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s olddefconfig
-      - name: Build vmlinux and modules
+          echo "=== BBR config check ==="
+          grep "TCP_CONG_BBR" out/.config
+          grep "TCP_CONG_BBR" out/.config | grep -v "^#" || (echo "BBR NOT ENABLED - ABORTING" && exit 1)
+      - name: Build modules
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s -j$(nproc --all) modules 2>&1 | tee build.log
       - name: Check and package
         run: |
+          echo "=== Searching for tcp_bbr.ko ==="
+          find out -name "tcp_bbr.ko" 2>/dev/null
           if [ ! -f out/net/ipv4/tcp_bbr.ko ]; then echo "FAILED - tcp_bbr.ko not found"; tail -50 build.log; exit 1; fi
           echo "SUCCESS"
           ls -lh out/net/ipv4/tcp_bbr.ko
