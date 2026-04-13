@@ -1,5 +1,3 @@
-
-
 name: Build tcp_bbr.ko
 on:
   workflow_dispatch:
@@ -18,13 +16,16 @@ jobs:
       - name: Setup Clang r584948
         run: |
           mkdir -p $HOME/toolchain/clang
-          git clone --depth=1 --filter=blob:none --sparse https://github.com/msft-mirror-aosp/platform.prebuilts.clang.host.linux-x86.git $HOME/toolchain/clang-repo
-          cd $HOME/toolchain/clang-repo
-          git sparse-checkout set clang-r584948
-          git checkout
-          echo "=== Listing clang-repo contents ==="
-          ls -la
-          cp -r clang-r584948/* $HOME/toolchain/clang/
+          curl -L "https://storage.googleapis.com/android-toolbox-public/clang-r584948-linux-x86-64.tar.gz" -o clang.tar.gz && tar -xf clang.tar.gz -C $HOME/toolchain/clang --strip-components=1 || true
+          if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
+            echo "Trying ci.android.com build 14488419..."
+            curl -L "https://storage.googleapis.com/android-build-public/builds/submitted/14488419/linux/latest/android-sdk_linux-x86.tar.gz" -o clang.tar.gz || true
+          fi
+          if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
+            echo "Falling back to Clang 17..."
+            curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz" -o clang.tar.xz
+            tar -xf clang.tar.xz --strip-components=1 -C $HOME/toolchain/clang
+          fi
           echo "$HOME/toolchain/clang/bin" >> $GITHUB_PATH
           $HOME/toolchain/clang/bin/clang --version
       - name: Generate config
