@@ -18,10 +18,6 @@ jobs:
           mkdir -p $HOME/toolchain/clang
           curl -L "https://storage.googleapis.com/android-toolbox-public/clang-r584948-linux-x86-64.tar.gz" -o clang.tar.gz && tar -xf clang.tar.gz -C $HOME/toolchain/clang --strip-components=1 || true
           if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
-            echo "Trying ci.android.com build 14488419..."
-            curl -L "https://storage.googleapis.com/android-build-public/builds/submitted/14488419/linux/latest/android-sdk_linux-x86.tar.gz" -o clang.tar.gz || true
-          fi
-          if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
             echo "Falling back to Clang 17..."
             curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz" -o clang.tar.xz
             tar -xf clang.tar.xz --strip-components=1 -C $HOME/toolchain/clang
@@ -40,19 +36,22 @@ jobs:
           echo "CONFIG_MODULE_UNLOAD=y" >> out/.config
           echo "CONFIG_NET_SCH_FQ=y" >> out/.config
           echo "CONFIG_NET_SCH_FQ_CODEL=y" >> out/.config
+          echo 'CONFIG_LOCALVERSION="-ExtremeKRNL-Quant-v2+"' >> out/.config
+          echo 'CONFIG_LOCALVERSION_AUTO=n' >> out/.config
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s olddefconfig
-          echo "=== FINAL BBR config check ==="
-          grep -E "TCP_CONG_BBR|TCP_CONG_ADVANCED|^CONFIG_MODULES=" out/.config
+          echo "=== FINAL config check ==="
+          grep -E "TCP_CONG_BBR|TCP_CONG_ADVANCED|LOCALVERSION|^CONFIG_MODULES=" out/.config
       - name: Build modules
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
-          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s -j$(nproc --all) modules 2>&1 | tee build.log
+          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=tomekcz KBUILD_BUILD_HOST=cachyos-x8664 KERNELRELEASE=5.10.246-ExtremeKRNL-Quant-v2+ -j$(nproc --all) modules 2>&1 | tee build.log
       - name: Check and package
         run: |
           find out -name "tcp_bbr.ko" 2>/dev/null
           if [ ! -f out/net/ipv4/tcp_bbr.ko ]; then echo "FAILED"; tail -50 build.log; exit 1; fi
           echo "SUCCESS"
           ls -lh out/net/ipv4/tcp_bbr.ko
+          echo "=== Module vermagic ==="
           strings out/net/ipv4/tcp_bbr.ko | grep vermagic
           mkdir -p magisk/META-INF/com/google/android magisk/module
           cp out/net/ipv4/tcp_bbr.ko magisk/module/
