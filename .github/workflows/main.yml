@@ -1,3 +1,5 @@
+
+
 name: Build tcp_bbr.ko
 on:
   workflow_dispatch:
@@ -19,6 +21,9 @@ jobs:
           git clone --depth=1 --filter=blob:none --sparse https://github.com/msft-mirror-aosp/platform.prebuilts.clang.host.linux-x86.git $HOME/toolchain/clang-repo
           cd $HOME/toolchain/clang-repo
           git sparse-checkout set clang-r584948
+          git checkout
+          echo "=== Listing clang-repo contents ==="
+          ls -la
           cp -r clang-r584948/* $HOME/toolchain/clang/
           echo "$HOME/toolchain/clang/bin" >> $GITHUB_PATH
           $HOME/toolchain/clang/bin/clang --version
