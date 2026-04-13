@@ -16,14 +16,10 @@ jobs:
       - name: Setup Clang r584948
         run: |
           mkdir -p $HOME/toolchain/clang
-          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r584948.tar.gz" -o clang.tar.gz
-          if file clang.tar.gz | grep -q gzip; then
-            tar -xf clang.tar.gz -C $HOME/toolchain/clang
-          else
-            echo "AOSP failed, trying backup..."
-            curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.0/clang+llvm-22.1.0-x86_64-linux-gnu-ubuntu-22.04.tar.xz" -o clang.tar.xz
-            tar -xf clang.tar.xz --strip-components=1 -C $HOME/toolchain/clang
-          fi
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/msft-mirror-aosp/platform.prebuilts.clang.host.linux-x86.git $HOME/toolchain/clang-repo
+          cd $HOME/toolchain/clang-repo
+          git sparse-checkout set clang-r584948
+          cp -r clang-r584948/* $HOME/toolchain/clang/
           echo "$HOME/toolchain/clang/bin" >> $GITHUB_PATH
           $HOME/toolchain/clang/bin/clang --version
       - name: Generate config
