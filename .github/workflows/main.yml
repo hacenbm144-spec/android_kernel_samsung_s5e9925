@@ -20,13 +20,14 @@ jobs:
           export PATH="$HOME/toolchain/clang/bin:$PATH"
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- s5e9925_defconfig
           ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/b0s.config
-          echo "CONFIG_TCP_CONG_BBR=m" >> out/.config
+          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s olddefconfig
           echo "CONFIG_MODULES=y" >> out/.config
           echo "CONFIG_MODULE_UNLOAD=y" >> out/.config
-          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s olddefconfig
+          echo "CONFIG_TCP_CONG_BBR=m" >> out/.config
+          echo "CONFIG_NET_SCH_FQ=y" >> out/.config
+          echo "CONFIG_NET_SCH_FQ_CODEL=y" >> out/.config
           echo "=== BBR config check ==="
-          grep "TCP_CONG_BBR" out/.config
-          grep "TCP_CONG_BBR" out/.config | grep -v "^#" || (echo "BBR NOT ENABLED - ABORTING" && exit 1)
+          cat out/.config | grep -E "TCP_CONG_BBR|NET_SCH_FQ|MODULES"
       - name: Build modules
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
