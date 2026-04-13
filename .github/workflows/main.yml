@@ -13,8 +13,19 @@ jobs:
           fetch-depth: 1
       - name: Install dependencies
         run: sudo apt-get update -y && sudo apt-get install -y bc bison build-essential curl flex git libelf-dev libncurses5-dev libssl-dev python3 zip zlib1g-dev
-      - name: Setup Clang
-        run: mkdir -p $HOME/toolchain/clang && curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz" -o clang.tar.xz && tar -xf clang.tar.xz --strip-components=1 -C $HOME/toolchain/clang && echo "$HOME/toolchain/clang/bin" >> $GITHUB_PATH
+      - name: Setup Clang r584948
+        run: |
+          mkdir -p $HOME/toolchain/clang
+          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r584948.tar.gz" -o clang.tar.gz
+          if file clang.tar.gz | grep -q gzip; then
+            tar -xf clang.tar.gz -C $HOME/toolchain/clang
+          else
+            echo "AOSP failed, trying backup..."
+            curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.0/clang+llvm-22.1.0-x86_64-linux-gnu-ubuntu-22.04.tar.xz" -o clang.tar.xz
+            tar -xf clang.tar.xz --strip-components=1 -C $HOME/toolchain/clang
+          fi
+          echo "$HOME/toolchain/clang/bin" >> $GITHUB_PATH
+          $HOME/toolchain/clang/bin/clang --version
       - name: Generate config
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
@@ -29,16 +40,15 @@ jobs:
           echo "CONFIG_NET_SCH_FQ_CODEL=y" >> out/.config
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s olddefconfig
           echo "=== FINAL BBR config check ==="
-          grep -E "TCP_CONG_BBR|TCP_CONG_ADVANCED|NET_SCH_FQ|^CONFIG_MODULES=" out/.config
+          grep -E "TCP_CONG_BBR|TCP_CONG_ADVANCED|^CONFIG_MODULES=" out/.config
       - name: Build modules
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s -j$(nproc --all) modules 2>&1 | tee build.log
       - name: Check and package
         run: |
-          echo "=== Searching for tcp_bbr.ko ==="
           find out -name "tcp_bbr.ko" 2>/dev/null
-          if [ ! -f out/net/ipv4/tcp_bbr.ko ]; then echo "FAILED - tcp_bbr.ko not found"; tail -50 build.log; exit 1; fi
+          if [ ! -f out/net/ipv4/tcp_bbr.ko ]; then echo "FAILED"; tail -50 build.log; exit 1; fi
           echo "SUCCESS"
           ls -lh out/net/ipv4/tcp_bbr.ko
           strings out/net/ipv4/tcp_bbr.ko | grep vermagic
