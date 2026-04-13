@@ -13,8 +13,7 @@ jobs:
           fetch-depth: 1
       - name: Patch defconfig
         run: |
-          sed -i 's/CONFIG_MODVERSIONS=y/CONFIG_MODVERSIONS=n/' arch/arm64/configs/s5e9925_defconfig
-          sed -i 's/CONFIG_ASM_MODVERSIONS=y/CONFIG_ASM_MODVERSIONS=n/' arch/arm64/configs/s5e9925_defconfig
+          sed -i 's/CONFIG_MODVERSIONS=y/CONFIG_MODVERSIONS=y/' arch/arm64/configs/s5e9925_defconfig
           grep "MODVERSIONS" arch/arm64/configs/s5e9925_defconfig
       - name: Install dependencies
         run: sudo apt-get update -y && sudo apt-get install -y bc bison build-essential curl flex git libelf-dev libncurses5-dev libssl-dev python3 zip zlib1g-dev
@@ -29,6 +28,15 @@ jobs:
           fi
           echo "$HOME/toolchain/clang/bin" >> $GITHUB_PATH
           $HOME/toolchain/clang/bin/clang --version
+      - name: Download ExtremeKRNL kheaders
+        run: |
+          curl -L "https://github.com/hacenbm144-spec/android_kernel_samsung_s5e9925/releases/download/kheaders/kheaders.tar.xz" -o kheaders.tar.xz
+          ls -lh kheaders.tar.xz
+          mkdir -p kheaders
+          tar -xf kheaders.tar.xz -C kheaders
+          echo "=== kheaders contents ==="
+          ls kheaders/
+          find kheaders -name "Module.symvers" 2>/dev/null || echo "No Module.symvers found"
       - name: Generate config
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
@@ -46,9 +54,15 @@ jobs:
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s olddefconfig
           echo "=== FINAL config check ==="
           grep -E "TCP_CONG_BBR|LOCALVERSION|MODVERSIONS|^CONFIG_MODULES=" out/.config
-      - name: Build modules
+      - name: Build modules with kheaders symvers
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
+          if [ -f kheaders/Module.symvers ]; then
+            echo "Using ExtremeKRNL Module.symvers"
+            cp kheaders/Module.symvers out/Module.symvers
+          else
+            echo "No Module.symvers in kheaders - building without"
+          fi
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=tomekcz KBUILD_BUILD_HOST=cachyos-x8664 KERNELRELEASE=5.10.246-ExtremeKRNL-Quant-v2+ -j$(nproc --all) modules 2>&1 | tee build.log
       - name: Check and package
         run: |
