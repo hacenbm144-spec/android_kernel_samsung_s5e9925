@@ -26,8 +26,9 @@ jobs:
           echo "CONFIG_TCP_CONG_BBR=m" >> out/.config
           echo "CONFIG_NET_SCH_FQ=y" >> out/.config
           echo "CONFIG_NET_SCH_FQ_CODEL=y" >> out/.config
-          echo "=== BBR config check ==="
-          cat out/.config | grep -E "TCP_CONG_BBR|NET_SCH_FQ|MODULES"
+          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s olddefconfig
+          echo "=== FINAL BBR config check ==="
+          grep -E "TCP_CONG_BBR|NET_SCH_FQ|^CONFIG_MODULES=" out/.config
       - name: Build modules
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
