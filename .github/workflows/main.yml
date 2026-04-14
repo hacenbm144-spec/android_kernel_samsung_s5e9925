@@ -17,6 +17,7 @@ jobs:
           sed -i 's/CONFIG_MODVERSIONS=y/CONFIG_MODVERSIONS=n/' arch/arm64/configs/s5e9925-b0sxxx_defconfig
           sed -i 's/CONFIG_ASM_MODVERSIONS=y/CONFIG_ASM_MODVERSIONS=n/' arch/arm64/configs/s5e9925-b0sxxx_defconfig
           grep "MODVERSIONS" arch/arm64/configs/s5e9925-b0sxxx_defconfig || echo "MODVERSIONS not found"
+          touch gki/abi_symbollist.raw
       - name: Install dependencies
         run: sudo apt-get update -y && sudo apt-get install -y bc bison build-essential curl flex git libelf-dev libncurses5-dev libssl-dev python3 zip zlib1g-dev
       - name: Setup Clang r584948
@@ -43,9 +44,10 @@ jobs:
           echo "CONFIG_NET_SCH_FQ_CODEL=y" >> out/.config
           echo 'CONFIG_LOCALVERSION="-ExtremeKRNL-Quant-v2+"' >> out/.config
           echo 'CONFIG_LOCALVERSION_AUTO=n' >> out/.config
+          echo 'CONFIG_TRIM_UNUSED_KSYMS=n' >> out/.config
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=hacenbm144 KBUILD_BUILD_HOST=ExtremeKRNL-b0s olddefconfig
           echo "=== FINAL config check ==="
-          grep -E "TCP_CONG_BBR|LOCALVERSION|MODVERSIONS|^CONFIG_MODULES=" out/.config
+          grep -E "TCP_CONG_BBR|LOCALVERSION|MODVERSIONS|TRIM_UNUSED|^CONFIG_MODULES=" out/.config
       - name: Build modules
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
