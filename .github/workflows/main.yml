@@ -17,6 +17,7 @@ jobs:
           sed -i 's/CONFIG_MODVERSIONS=y/CONFIG_MODVERSIONS=n/' arch/arm64/configs/s5e9925-b0sxxx_defconfig
           sed -i 's/CONFIG_ASM_MODVERSIONS=y/CONFIG_ASM_MODVERSIONS=n/' arch/arm64/configs/s5e9925-b0sxxx_defconfig
           grep "MODVERSIONS" arch/arm64/configs/s5e9925-b0sxxx_defconfig || echo "MODVERSIONS not found"
+          mkdir -p gki
           touch gki/abi_symbollist.raw
       - name: Install dependencies
         run: sudo apt-get update -y && sudo apt-get install -y bc bison build-essential curl flex git libelf-dev libncurses5-dev libssl-dev python3 zip zlib1g-dev
