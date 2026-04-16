@@ -23,11 +23,6 @@ jobs:
           mkdir -p $HOME/toolchain/clang
           curl -L "https://storage.googleapis.com/android-toolbox-public/clang-r596125-linux-x86-64.tar.gz" -o clang.tar.gz && tar -xf clang.tar.gz -C $HOME/toolchain/clang --strip-components=1 || true
           if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
-            echo "Trying AOSP googlesource..."
-            curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r596125.tar.gz" -o clang2.tar.gz
-            tar -xf clang2.tar.gz -C $HOME/toolchain/clang || true
-          fi
-          if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
             echo "Falling back to Clang 17..."
             curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz" -o clang.tar.xz
             tar -xf clang.tar.xz --strip-components=1 -C $HOME/toolchain/clang
@@ -36,24 +31,9 @@ jobs:
           $HOME/toolchain/clang/bin/clang --version
       - name: Download Module.symvers
         run: |
-          curl -L "https://github.com/hacenbm144-spec/android_kernel_samsung_s5e9925/releases/download/kheaders/Module.symvers" -o Module.symvers || true
-          if [ ! -s Module.symvers ]; then
-            echo "Creating Module.symvers from known v1.6+ CRCs..."
-            cat > Module.symvers << 'SYMEOF'
-0x7c24b32d	module_layout	vmlinux	EXPORT_SYMBOL
-0x5a9f1d63	memmove	vmlinux	EXPORT_SYMBOL
-0xdcb764ad	memset	vmlinux	EXPORT_SYMBOL
-0x4829a47e	memcpy	vmlinux	EXPORT_SYMBOL
-0x8f678b07	__stack_chk_guard	vmlinux	EXPORT_SYMBOL
-0x98a9d10c	__stack_chk_fail	vmlinux	EXPORT_SYMBOL
-0x56470118	__warn_printk	vmlinux	EXPORT_SYMBOL
-0xec2fc692	cpu_hwcap_keys	vmlinux	EXPORT_SYMBOL
-0x14b89635	arm64_const_caps_ready	vmlinux	EXPORT_SYMBOL
-0x15ba50a6	jiffies	vmlinux	EXPORT_SYMBOL
-SYMEOF
-          fi
+          curl -L "https://github.com/hacenbm144-spec/android_kernel_samsung_s5e9925/releases/download/kheaders/Module.symvers" -o Module.symvers
           wc -l Module.symvers
-          head -5 Module.symvers
+          head -3 Module.symvers
       - name: Generate config
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
@@ -84,32 +64,6 @@ SYMEOF
           ls -lh out/net/ipv4/tcp_bbr.ko
           echo "=== Module vermagic ==="
           strings out/net/ipv4/tcp_bbr.ko | grep -E "vermagic|clang"
-          echo "=== Module symbols ==="
-          python3 -c "
-import struct
-def get_versions(f):
-    d=open(f,'rb').read()
-    shoff=struct.unpack_from('<Q',d,40)[0]
-    shentsize=struct.unpack_from('<H',d,58)[0]
-    shnum=struct.unpack_from('<H',d,60)[0]
-    shstrndx=struct.unpack_from('<H',d,62)[0]
-    st=struct.unpack_from('<Q',d,shoff+shstrndx*shentsize+24)[0]
-    for i in range(shnum):
-        sh=shoff+i*shentsize
-        shn=struct.unpack_from('<I',d,sh)[0]
-        sho=struct.unpack_from('<Q',d,sh+24)[0]
-        shs=struct.unpack_from('<Q',d,sh+32)[0]
-        e=d.find(b'\x00',st+shn)
-        n=d[st+shn:e].decode('ascii',errors='ignore')
-        if n=='__versions':
-            for j in range(shs//64):
-                o=sho+j*64
-                c=struct.unpack_from('<I',d,o)[0]
-                s=d[o+4:o+64].rstrip(b'\x00').decode('ascii',errors='ignore')
-                if s:print('0x'+format(c,'08x')+'\t'+s)
-            break
-get_versions('out/net/ipv4/tcp_bbr.ko')
-"
           BUILD_DATE=$(date +%Y%m%d-%H%M)
           mkdir -p magisk/META-INF/com/google/android magisk/module
           cp out/net/ipv4/tcp_bbr.ko magisk/module/
