@@ -1,4 +1,4 @@
-- name: Check and package
+name: Check and package
         run: |
           find out -name "tcp_bbr.ko" 2>/dev/null
           if [ ! -f out/net/ipv4/tcp_bbr.ko ]; then echo "FAILED"; tail -50 build.log; exit 1; fi
