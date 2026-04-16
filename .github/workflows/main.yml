@@ -1,57 +1,4 @@
-name: Build tcp_bbr.ko v1.6
-on:
-  workflow_dispatch:
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 90
-    steps:
-      - name: Checkout kernel source
-        uses: actions/checkout@v4
-        with:
-          ref: lineage-23.2
-          fetch-depth: 1
-      - name: Install dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y bc bison build-essential curl flex git libelf-dev libncurses5-dev libssl-dev python3 zip zlib1g-dev
-      - name: Setup Clang r596125
-        run: |
-          mkdir -p $HOME/toolchain/clang
-          curl -L "https://storage.googleapis.com/android-toolbox-public/clang-r596125-linux-x86-64.tar.gz" -o clang.tar.gz && tar -xf clang.tar.gz -C $HOME/toolchain/clang --strip-components=1 || true
-          if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
-            echo "Falling back to Clang 17..."
-            curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz" -o clang.tar.xz
-            tar -xf clang.tar.xz --strip-components=1 -C $HOME/toolchain/clang
-          fi
-          echo "$HOME/toolchain/clang/bin" >> $GITHUB_PATH
-          $HOME/toolchain/clang/bin/clang --version
-      - name: Download Module.symvers
-        run: |
-          curl -L "https://github.com/hacenbm144-spec/android_kernel_samsung_s5e9925/releases/download/kheaders/Module.symvers" -o Module.symvers
-          wc -l Module.symvers
-          head -3 Module.symvers
-      - name: Generate config
-        run: |
-          export PATH="$HOME/toolchain/clang/bin:$PATH"
-          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- s5e9925_defconfig
-          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/b0s.config
-          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=alienware-cachy KBUILD_BUILD_HOST=alienwarecachy-g33500 olddefconfig
-          echo "CONFIG_TCP_CONG_ADVANCED=y" >> out/.config
-          echo "CONFIG_TCP_CONG_BBR=m" >> out/.config
-          echo "CONFIG_MODULES=y" >> out/.config
-          echo "CONFIG_MODULE_UNLOAD=y" >> out/.config
-          echo "CONFIG_NET_SCH_FQ=y" >> out/.config
-          echo "CONFIG_NET_SCH_FQ_CODEL=y" >> out/.config
-          echo 'CONFIG_LOCALVERSION="-ExtremeKRNL-v1.6+"' >> out/.config
-          echo 'CONFIG_LOCALVERSION_AUTO=n' >> out/.config
-          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=alienware-cachy KBUILD_BUILD_HOST=alienwarecachy-g33500 olddefconfig
-          cp Module.symvers out/Module.symvers
-          echo "=== FINAL config check ==="
-          grep -E "TCP_CONG_BBR|LOCALVERSION|MODVERSIONS|^CONFIG_MODULES=" out/.config
-      - name: Build modules
-        run: |
-          export PATH="$HOME/toolchain/clang/bin:$PATH"
-          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=alienware-cachy KBUILD_BUILD_HOST=alienwarecachy-g33500 KERNELRELEASE=5.10.252-ExtremeKRNL-v1.6+ -j$(nproc --all) modules 2>&1 | tee build.log
-      - name: Check and package
+- name: Check and package
         run: |
           find out -name "tcp_bbr.ko" 2>/dev/null
           if [ ! -f out/net/ipv4/tcp_bbr.ko ]; then echo "FAILED"; tail -50 build.log; exit 1; fi
@@ -59,30 +6,6 @@ jobs:
           ls -lh out/net/ipv4/tcp_bbr.ko
           echo "=== Module vermagic ==="
           strings out/net/ipv4/tcp_bbr.ko | grep -E "vermagic|clang"
-          echo "=== Module CRCs ==="
-          python3 -c "
-import struct
-d=open('out/net/ipv4/tcp_bbr.ko','rb').read()
-shoff=struct.unpack_from('<Q',d,40)[0]
-shentsize=struct.unpack_from('<H',d,58)[0]
-shnum=struct.unpack_from('<H',d,60)[0]
-shstrndx=struct.unpack_from('<H',d,62)[0]
-st=struct.unpack_from('<Q',d,shoff+shstrndx*shentsize+24)[0]
-for i in range(shnum):
-    sh=shoff+i*shentsize
-    shn=struct.unpack_from('<I',d,sh)[0]
-    sho=struct.unpack_from('<Q',d,sh+24)[0]
-    shs=struct.unpack_from('<Q',d,sh+32)[0]
-    e=d.find(b'\x00',st+shn)
-    n=d[st+shn:e].decode('ascii',errors='ignore')
-    if n=='__versions':
-        for j in range(shs//64):
-            o=sho+j*64
-            c=struct.unpack_from('<I',d,o)[0]
-            s=d[o+4:o+64].rstrip(b'\x00').decode('ascii',errors='ignore')
-            if s:print('0x'+format(c,'08x')+'\t'+s)
-        break
-"
           BUILD_DATE=$(date +%Y%m%d-%H%M)
           mkdir -p magisk/META-INF/com/google/android magisk/module
           cp out/net/ipv4/tcp_bbr.ko magisk/module/
