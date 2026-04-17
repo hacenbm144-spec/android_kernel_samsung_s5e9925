@@ -11,7 +11,7 @@ jobs:
           ref: lineage-23.2
           fetch-depth: 1
       - name: Install dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y bc bison build-essential curl flex git libelf-dev libncurses5-dec libssl-dev python3 zip zlib1g-dev
+        run: sudo apt-get update -y && sudo apt-get install -y bc bison build-essential curl flex git libelf-dev libncurses5-dev libssl-dev python3 zip zlib1g-dev
       - name: Setup Clang r596125
         run: |
           mkdir -p $HOME/toolchain/clang
