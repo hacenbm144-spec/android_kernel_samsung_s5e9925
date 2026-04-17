@@ -39,7 +39,9 @@ jobs:
           echo 'CONFIG_LOCALVERSION="-ExtremeKRNL-v1.6+"' >> out/.config
           echo 'CONFIG_LOCALVERSION_AUTO=n' >> out/.config
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=alienware-cachy KBUILD_BUILD_HOST=alienwarecachy-g33500 olddefconfig
-          grep -E "TCP_CONG_BBR|LOCALVERSION|MODVERSIONS|^CONFIG_MODULES=" out/.config
+          echo "=== MODVERSIONS check ==="
+          grep "MODVERSIONS" out/.config
+          grep -E "TCP_CONG_BBR|LOCALVERSION|^CONFIG_MODULES=" out/.config
       - name: Build modules
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
@@ -50,44 +52,44 @@ jobs:
           if [ ! -f out/net/ipv4/tcp_bbr.ko ]; then echo "FAILED"; tail -50 build.log; exit 1; fi
           echo "SUCCESS - patching CRCs..."
           python3 << 'PYEOF'
-          import struct
-          data = bytearray(open('out/net/ipv4/tcp_bbr.ko','rb').read())
-          fixes = {
-              'module_layout': 0x7c24b32d,
-              'tcp_register_congestion_control': 0x830d1ca5,
-              'tcp_unregister_congestion_control': 0x227ff6bd,
-              'jiffies': 0x15ba50a6,
-              '__warn_printk': 0x56470118,
-              '__stack_chk_fail': 0x98a9d10c,
-              'cpu_hwcap_keys': 0xec2fc692,
-              'arm64_const_caps_ready': 0x14b89635,
-              'minmax_running_max': 0xb911bb58,
-              'prandom_u32': 0xfda9581f,
-          }
-          shoff=struct.unpack_from('<Q',data,40)[0]
-          shentsize=struct.unpack_from('<H',data,58)[0]
-          shnum=struct.unpack_from('<H',data,60)[0]
-          shstrndx=struct.unpack_from('<H',data,62)[0]
-          st=struct.unpack_from('<Q',data,shoff+shstrndx*shentsize+24)[0]
-          for i in range(shnum):
-              sh=shoff+i*shentsize
-              shn=struct.unpack_from('<I',data,sh)[0]
-              sho=struct.unpack_from('<Q',data,sh+24)[0]
-              shs=struct.unpack_from('<Q',data,sh+32)[0]
-              e=data.find(b'\x00',st+shn)
-              n=data[st+shn:e].decode('ascii',errors='ignore')
-              if n=='__versions':
-                  for j in range(shs//64):
-                      o=sho+j*64
-                      s=data[o+4:o+64].rstrip(b'\x00').decode('ascii',errors='ignore')
-                      if s in fixes:
-                          old=struct.unpack_from('<I',data,o)[0]
-                          struct.pack_into('<I',data,o,fixes[s])
-                          print('Fixed '+s+': 0x'+format(old,'08x')+' -> 0x'+format(fixes[s],'08x'))
-                  break
-          open('out/net/ipv4/tcp_bbr.ko','wb').write(data)
-          print('CRC patching done!')
-          PYEOF
+import struct
+data = bytearray(open('out/net/ipv4/tcp_bbr.ko','rb').read())
+fixes = {
+    'module_layout': 0x7c24b32d,
+    'tcp_register_congestion_control': 0x830d1ca5,
+    'tcp_unregister_congestion_control': 0x227ff6bd,
+    'jiffies': 0x15ba50a6,
+    '__warn_printk': 0x56470118,
+    '__stack_chk_fail': 0x98a9d10c,
+    'cpu_hwcap_keys': 0xec2fc692,
+    'arm64_const_caps_ready': 0x14b89635,
+    'minmax_running_max': 0xb911bb58,
+    'prandom_u32': 0xfda9581f,
+}
+shoff=struct.unpack_from('<Q',data,40)[0]
+shentsize=struct.unpack_from('<H',data,58)[0]
+shnum=struct.unpack_from('<H',data,60)[0]
+shstrndx=struct.unpack_from('<H',data,62)[0]
+st=struct.unpack_from('<Q',data,shoff+shstrndx*shentsize+24)[0]
+for i in range(shnum):
+    sh=shoff+i*shentsize
+    shn=struct.unpack_from('<I',data,sh)[0]
+    sho=struct.unpack_from('<Q',data,sh+24)[0]
+    shs=struct.unpack_from('<Q',data,sh+32)[0]
+    e=data.find(b'\x00',st+shn)
+    n=data[st+shn:e].decode('ascii',errors='ignore')
+    if n=='__versions':
+        for j in range(shs//64):
+            o=sho+j*64
+            s=data[o+4:o+64].rstrip(b'\x00').decode('ascii',errors='ignore')
+            if s in fixes:
+                old=struct.unpack_from('<I',data,o)[0]
+                struct.pack_into('<I',data,o,fixes[s])
+                print('Fixed '+s+': 0x'+format(old,'08x')+' -> 0x'+format(fixes[s],'08x'))
+        break
+open('out/net/ipv4/tcp_bbr.ko','wb').write(data)
+print('CRC patching done!')
+PYEOF
           echo "=== Vermagic ==="
           strings out/net/ipv4/tcp_bbr.ko | grep vermagic
           BUILD_DATE=$(date +%Y%m%d-%H%M)
