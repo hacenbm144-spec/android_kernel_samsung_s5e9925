@@ -1,3 +1,4 @@
+name: Build tcp_bbr.ko v1.6
 on:
   workflow_dispatch:
 jobs:
@@ -15,7 +16,15 @@ jobs:
       - name: Setup Clang r596125
         run: |
           mkdir -p $HOME/toolchain/clang
-          curl -L "https://storage.googleapis.com/android-toolbox-public/clang-r596125-linux-x86-64.tar.gz" -o clang.tar.gz && tar -xf clang.tar.gz -C $HOME/toolchain/clang --strip-components=1 || true
+          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r596125.tar.gz" -o clang.tar.gz
+          file clang.tar.gz
+          ls -lh clang.tar.gz
+          tar -xf clang.tar.gz -C $HOME/toolchain/clang || true
+          if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
+            echo "Trying alternate URL..."
+            curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/f669caf358/clang-r596125.tar.gz" -o clang2.tar.gz
+            tar -xf clang2.tar.gz -C $HOME/toolchain/clang || true
+          fi
           if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
             echo "Falling back to Clang 17..."
             curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/clang+llvm-17.0.6-x86_64-linux-gnu-ubuntu-22.04.tar.xz" -o clang.tar.xz
@@ -47,45 +56,36 @@ jobs:
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=alienware-cachy KBUILD_BUILD_HOST=alienwarecachy-g33500 KERNELRELEASE=5.10.252-ExtremeKRNL-v1.6+ -j$(nproc --all) modules 2>&1 | tee build.log
       - name: Create CRC patcher
         run: |
-          cat > patch_crc.py << 'EOF'
-          import struct
-          data = bytearray(open('out/net/ipv4/tcp_bbr.ko','rb').read())
-          fixes = {
-            'module_layout': 0x7c24b32d,
-            'tcp_register_congestion_control': 0x830d1ca5,
-            'tcp_unregister_congestion_control': 0x227ff6bd,
-            'jiffies': 0x15ba50a6,
-            '__warn_printk': 0x56470118,
-            '__stack_chk_fail': 0x98a9d10c,
-            'cpu_hwcap_keys': 0xec2fc692,
-            'arm64_const_caps_ready': 0x14b89635,
-            'minmax_running_max': 0xb911bb58,
-            'prandom_u32': 0xfda9581f,
-          }
-          shoff=struct.unpack_from('<Q',data,40)[0]
-          shentsize=struct.unpack_from('<H',data,58)[0]
-          shnum=struct.unpack_from('<H',data,60)[0]
-          shstrndx=struct.unpack_from('<H',data,62)[0]
-          st=struct.unpack_from('<Q',data,shoff+shstrndx*shentsize+24)[0]
-          for i in range(shnum):
-            sh=shoff+i*shentsize
-            shn=struct.unpack_from('<I',data,sh)[0]
-            sho=struct.unpack_from('<Q',data,sh+24)[0]
-            shs=struct.unpack_from('<Q',data,sh+32)[0]
-            e=data.find(b'\x00',st+shn)
-            n=data[st+shn:e].decode('ascii',errors='ignore')
-            if n=='__versions':
-              for j in range(shs//64):
-                o=sho+j*64
-                s=data[o+4:o+64].rstrip(b'\x00').decode('ascii',errors='ignore')
-                if s in fixes:
-                  old=struct.unpack_from('<I',data,o)[0]
-                  struct.pack_into('<I',data,o,fixes[s])
-                  print('Fixed '+s+': 0x'+format(old,'08x')+' -> 0x'+format(fixes[s],'08x'))
-              break
-          open('out/net/ipv4/tcp_bbr.ko','wb').write(data)
-          print('CRC patching done!')
-          EOF
+          python3 -c "
+          code = 'import struct\n'
+          code += 'data=bytearray(open(\"out/net/ipv4/tcp_bbr.ko\",\"rb\").read())\n'
+          code += 'fixes={\"module_layout\":0x7c24b32d,\"tcp_register_congestion_control\":0x830d1ca5,\"tcp_unregister_congestion_control\":0x227ff6bd,\"jiffies\":0x15ba50a6,\"__warn_printk\":0x56470118,\"__stack_chk_fail\":0x98a9d10c,\"cpu_hwcap_keys\":0xec2fc692,\"arm64_const_caps_ready\":0x14b89635,\"minmax_running_max\":0xb911bb58,\"prandom_u32\":0xfda9581f}\n'
+          code += 'shoff=struct.unpack_from(\"<Q\",data,40)[0]\n'
+          code += 'shentsize=struct.unpack_from(\"<H\",data,58)[0]\n'
+          code += 'shnum=struct.unpack_from(\"<H\",data,60)[0]\n'
+          code += 'shstrndx=struct.unpack_from(\"<H\",data,62)[0]\n'
+          code += 'st=struct.unpack_from(\"<Q\",data,shoff+shstrndx*shentsize+24)[0]\n'
+          code += 'NUL=bytes([0])\n'
+          code += 'for i in range(shnum):\n'
+          code += '    sh=shoff+i*shentsize\n'
+          code += '    shn=struct.unpack_from(\"<I\",data,sh)[0]\n'
+          code += '    sho=struct.unpack_from(\"<Q\",data,sh+24)[0]\n'
+          code += '    shs=struct.unpack_from(\"<Q\",data,sh+32)[0]\n'
+          code += '    e=data.find(NUL,st+shn)\n'
+          code += '    n=data[st+shn:e].decode(\"ascii\",errors=\"ignore\")\n'
+          code += '    if n==\"__versions\":\n'
+          code += '        for j in range(shs//64):\n'
+          code += '            o=sho+j*64\n'
+          code += '            s=bytes(data[o+4:o+64]).strip(NUL).decode(\"ascii\",errors=\"ignore\")\n'
+          code += '            if s in fixes:\n'
+          code += '                old=struct.unpack_from(\"<I\",data,o)[0]\n'
+          code += '                struct.pack_into(\"<I\",data,o,fixes[s])\n'
+          code += '                print(\"Fixed \"+s+\": 0x\"+format(old,\"08x\")+\" -> 0x\"+format(fixes[s],\"08x\"))\n'
+          code += '        break\n'
+          code += 'open(\"out/net/ipv4/tcp_bbr.ko\",\"wb\").write(data)\n'
+          code += 'print(\"CRC patching done!\")\n'
+          open('patch_crc.py','w').write(code)
+          "
       - name: Patch CRCs and package
         run: |
           find out -name "tcp_bbr.ko" 2>/dev/null
@@ -94,6 +94,8 @@ jobs:
           python3 patch_crc.py
           echo "=== Vermagic ==="
           strings out/net/ipv4/tcp_bbr.ko | grep vermagic
+          echo "=== Clang version in module ==="
+          strings out/net/ipv4/tcp_bbr.ko | grep clang
           BUILD_DATE=$(date +%Y%m%d-%H%M)
           mkdir -p magisk/META-INF/com/google/android magisk/module
           cp out/net/ipv4/tcp_bbr.ko magisk/module/
