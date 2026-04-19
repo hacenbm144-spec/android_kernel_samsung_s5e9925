@@ -16,7 +16,7 @@ jobs:
       - name: Setup Clang r416183
         run: |
           mkdir -p $HOME/toolchain/clang
-          git clone --depth=1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-aosp
+          git clone --depth=1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-aosp -b main-kernel
           cd clang-aosp
           git ls-tree HEAD | grep r416183
           CLANG_DIR=$(git ls-tree HEAD | grep r416183 | awk '{print $4}' | head -1)
