@@ -11,9 +11,6 @@ jobs:
         with:
           ref: lineage-23.2
           fetch-depth: 1
-      - name: Patch defconfig
-        run: |
-          grep "MODVERSIONS" arch/arm64/configs/s5e9925_defconfig || echo "MODVERSIONS not found"
       - name: Install dependencies
         run: sudo apt-get update -y && sudo apt-get install -y bc bison build-essential curl flex git libelf-dev libncurses5-dev libssl-dev python3 zip zlib1g-dev
       - name: Setup Clang r416183
@@ -22,7 +19,16 @@ jobs:
           git clone --depth=1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-aosp
           cd clang-aosp
           git sparse-checkout set clang-r416183b
-          cp -r clang-r416183b/* $HOME/toolchain/clang/
+          git checkout
+          ls | grep r416183
+          if [ -d clang-r416183b ]; then
+            cp -r clang-r416183b/* $HOME/toolchain/clang/
+          else
+            echo "Trying clang-r416183..."
+            git sparse-checkout set clang-r416183
+            git checkout
+            cp -r clang-r416183/* $HOME/toolchain/clang/ || true
+          fi
           cd ..
           if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
             echo "Falling back to Clang 17..."
