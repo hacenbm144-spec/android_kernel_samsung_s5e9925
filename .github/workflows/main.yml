@@ -16,7 +16,11 @@ jobs:
       - name: Setup Clang r416183
         run: |
           mkdir -p $HOME/toolchain/clang
-          git clone --depth=1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-aosp -b main-kernel
+          for BRANCH in android12-release android12-dev android-12.0.0_r1 android-s-beta master main; do
+            echo "Trying branch: $BRANCH"
+            git clone --depth=1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-aosp -b $BRANCH 2>/dev/null && break
+            rm -rf clang-aosp
+          done
           cd clang-aosp
           git ls-tree HEAD | grep r416183
           CLANG_DIR=$(git ls-tree HEAD | grep r416183 | awk '{print $4}' | head -1)
