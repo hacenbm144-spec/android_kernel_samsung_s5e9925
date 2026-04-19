@@ -18,16 +18,13 @@ jobs:
           mkdir -p $HOME/toolchain/clang
           git clone --depth=1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-aosp
           cd clang-aosp
-          git sparse-checkout set clang-r416183b
-          git checkout
-          ls | grep r416183
-          if [ -d clang-r416183b ]; then
-            cp -r clang-r416183b/* $HOME/toolchain/clang/
-          else
-            echo "Trying clang-r416183..."
-            git sparse-checkout set clang-r416183
+          git ls-tree HEAD | grep r416183
+          CLANG_DIR=$(git ls-tree HEAD | grep r416183 | awk '{print $4}' | head -1)
+          echo "Found: $CLANG_DIR"
+          if [ -n "$CLANG_DIR" ]; then
+            git sparse-checkout set $CLANG_DIR
             git checkout
-            cp -r clang-r416183/* $HOME/toolchain/clang/ || true
+            cp -r $CLANG_DIR/* $HOME/toolchain/clang/
           fi
           cd ..
           if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
