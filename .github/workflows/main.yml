@@ -1,4 +1,4 @@
-name: Build tcp_bbr.ko v1.6
+name: Build tcp_bbr.ko Stock GZA1
 on:
   workflow_dispatch:
 jobs:
@@ -11,15 +11,18 @@ jobs:
         with:
           ref: lineage-23.2
           fetch-depth: 1
+      - name: Patch defconfig
+        run: |
+          grep "MODVERSIONS" arch/arm64/configs/s5e9925_defconfig || echo "MODVERSIONS not found"
       - name: Install dependencies
         run: sudo apt-get update -y && sudo apt-get install -y bc bison build-essential curl flex git libelf-dev libncurses5-dev libssl-dev python3 zip zlib1g-dev
-      - name: Setup Clang r596125
+      - name: Setup Clang r416183
         run: |
           mkdir -p $HOME/toolchain/clang
           git clone --depth=1 --filter=blob:none --sparse https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-aosp
           cd clang-aosp
-          git sparse-checkout set clang-r596125
-          cp -r clang-r596125/* $HOME/toolchain/clang/
+          git sparse-checkout set clang-r416183b
+          cp -r clang-r416183b/* $HOME/toolchain/clang/
           cd ..
           if [ ! -f $HOME/toolchain/clang/bin/clang ]; then
             echo "Falling back to Clang 17..."
@@ -33,23 +36,23 @@ jobs:
           export PATH="$HOME/toolchain/clang/bin:$PATH"
           make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- s5e9925_defconfig
           ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/b0s.config
-          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=alienware-cachy KBUILD_BUILD_HOST=alienwarecachy-g33500 olddefconfig
+          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=dpi KBUILD_BUILD_HOST=21DN4611 olddefconfig
           echo "CONFIG_TCP_CONG_ADVANCED=y" >> out/.config
           echo "CONFIG_TCP_CONG_BBR=m" >> out/.config
           echo "CONFIG_MODULES=y" >> out/.config
           echo "CONFIG_MODULE_UNLOAD=y" >> out/.config
           echo "CONFIG_NET_SCH_FQ=y" >> out/.config
           echo "CONFIG_NET_SCH_FQ_CODEL=y" >> out/.config
-          echo 'CONFIG_LOCALVERSION="-ExtremeKRNL-v1.6+"' >> out/.config
+          echo 'CONFIG_LOCALVERSION="-android12-9-31999025-abS908BXXSLGZA1"' >> out/.config
           echo 'CONFIG_LOCALVERSION_AUTO=n' >> out/.config
-          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=alienware-cachy KBUILD_BUILD_HOST=alienwarecachy-g33500 olddefconfig
+          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=dpi KBUILD_BUILD_HOST=21DN4611 olddefconfig
           echo "=== MODVERSIONS check ==="
           grep "MODVERSIONS" out/.config
           grep -E "TCP_CONG_BBR|LOCALVERSION|^CONFIG_MODULES=" out/.config
       - name: Build modules
         run: |
           export PATH="$HOME/toolchain/clang/bin:$PATH"
-          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=alienware-cachy KBUILD_BUILD_HOST=alienwarecachy-g33500 KERNELRELEASE=5.10.252-ExtremeKRNL-v1.6+ -j$(nproc --all) modules 2>&1 | tee build.log
+          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- KBUILD_BUILD_USER=dpi KBUILD_BUILD_HOST=21DN4611 KERNELRELEASE=5.10.237-android12-9-31999025-abS908BXXSLGZA1 -j$(nproc --all) modules 2>&1 | tee build.log
       - name: Create CRC patcher
         run: |
           python3 -c "
@@ -90,12 +93,12 @@ jobs:
           python3 patch_crc.py
           echo "=== Vermagic ==="
           strings out/net/ipv4/tcp_bbr.ko | grep vermagic
-          echo "=== Clang version in module ==="
+          echo "=== Clang version ==="
           strings out/net/ipv4/tcp_bbr.ko | grep clang
           BUILD_DATE=$(date +%Y%m%d-%H%M)
           mkdir -p magisk/META-INF/com/google/android magisk/module
           cp out/net/ipv4/tcp_bbr.ko magisk/module/
-          printf "id=tcp_bbr_extremekrnl\nname=TCP BBR ExtremeKRNL v1.6\nversion=v1.0-${BUILD_DATE}\nversionCode=1\nauthor=hacenbm144\ndescription=BBR for ExtremeKRNL-v1.6 built ${BUILD_DATE}\n" > magisk/module.prop
+          printf "id=tcp_bbr_stock\nname=TCP BBR Stock GZA1\nversion=v1.0-${BUILD_DATE}\nversionCode=1\nauthor=hacenbm144\ndescription=BBR for Stock GZA1 built ${BUILD_DATE}\n" > magisk/module.prop
           printf 'MODDIR=${0%%/*}\ninsmod $MODDIR/module/tcp_bbr.ko && echo bbr > /proc/sys/net/ipv4/tcp_congestion_control && echo fq > /proc/sys/net/core/default_qdisc\n' > magisk/post-fs-data.sh
           printf '#!/sbin/sh\nSKIPUNZIP=1\nunzip -o "$ZIPFILE" -d "$MODPATH"\n' > magisk/META-INF/com/google/android/update-binary
           printf '#MAGISK\n' > magisk/META-INF/com/google/android/updater-script
@@ -103,7 +106,7 @@ jobs:
       - name: Upload module
         uses: actions/upload-artifact@v4
         with:
-          name: tcp_bbr_module_v1.6
+          name: tcp_bbr_stock_gza1
           path: tcp_bbr.zip
           retention-days: 7
       - name: Upload log
